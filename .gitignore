@@ -1,0 +1,9 @@
+session/
+cleaner.log
+cookies.json
+*.png
+*.swp
+node_modules/
+debug.js
+snap.js
+export-cookies.py
