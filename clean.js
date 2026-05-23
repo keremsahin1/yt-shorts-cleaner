@@ -15,7 +15,7 @@ const LOG_FILE = path.join(__dirname, 'cleaner.log');
 const SESSION_DIR = path.join(__dirname, 'session');
 
 const SHORTS_SELECTOR = 'ytm-shorts-lockup-view-model-v2, ytd-video-renderer:has(a[href*="/shorts/"]), yt-lockup-view-model';
-const REMOVE_BUTTON_SELECTOR = '.yt-list-item-view-model__container--tappable:has-text("Remove from watch history"), ytd-menu-service-item-renderer:has-text("Remove from watch history")';
+const REMOVE_BUTTON_SELECTOR = '[role="menuitem"]:has-text("Remove from watch history"), tp-yt-paper-item:has-text("Remove from watch history"), .yt-list-item-view-model__container--tappable:has-text("Remove from watch history"), ytd-menu-service-item-renderer:has-text("Remove from watch history")';
 
 function log(msg) {
   const line = `[${new Date().toISOString()}] ${msg}`;
@@ -73,15 +73,30 @@ async function deleteShorts(page) {
         const entry = page.locator(SHORTS_SELECTOR).nth(i);
         const link = await entry.locator('a[href]').first().getAttribute('href', { timeout: 2000 }).catch(() => '?');
 
-        // Open menu (handles both "More actions" and "Action menu" labels)
+        // Scroll entry into view and open menu
+        await entry.scrollIntoViewIfNeeded();
         const menuBtn = await getMenuButton(entry);
         await menuBtn.click({ timeout: 3000 });
         await page.waitForTimeout(800);
 
-        // Click Remove
-        const removeBtn = page.locator(REMOVE_BUTTON_SELECTOR).first();
-        await removeBtn.waitFor({ state: 'visible', timeout: 5000 });
-        await removeBtn.click();
+        // Click Remove — use evaluate to find the first *visible* match,
+        // avoiding stale hidden popup elements that confuse .first()
+        const removed = await page.evaluate(() => {
+          const sels = ['[role="menuitem"]', 'tp-yt-paper-item',
+            'ytd-menu-service-item-renderer',
+            '.yt-list-item-view-model__container--tappable'];
+          for (const sel of sels) {
+            for (const el of document.querySelectorAll(sel)) {
+              if (el.offsetParent !== null &&
+                  el.textContent.includes('Remove from watch history')) {
+                el.click();
+                return true;
+              }
+            }
+          }
+          return false;
+        });
+        if (!removed) throw new Error('Remove from watch history button not found');
         await page.waitForTimeout(1000);
 
         totalDeleted++;
