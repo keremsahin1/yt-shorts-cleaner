@@ -56,19 +56,31 @@ async function getMenuButton(entry) {
 async function loadHistoryPage(page) {
   await page.goto('https://www.youtube.com/feed/history', { waitUntil: 'networkidle' });
 
-  // The Shorts tab is a hard precondition, not best-effort. Without it we are
-  // looking at the unfiltered history feed, and anything we delete there is
-  // ordinary watch history. Abort rather than operate on the wrong page.
+  // Confirm we are on the signed-in history page before doing anything
+  // destructive. If the session expired or YouTube served something else, the
+  // contents are not ours to delete from.
+  await page.locator('ytd-browse[page-subtype="history"]')
+    .waitFor({ state: 'attached', timeout: 15000 })
+    .catch(() => {});
+  const onHistoryPage = await page.locator('ytd-browse[page-subtype="history"]').count() > 0;
+  const signedIn = await page.locator('#avatar-btn').count() > 0;
+  if (!onHistoryPage || !signedIn) {
+    throw new Error(
+      `Not on a signed-in history page (history=${onHistoryPage}, signedIn=${signedIn}) ` +
+      '— refusing to touch watch history'
+    );
+  }
+
+  // The Shorts tab is what restricts the feed to Shorts. YouTube omits the
+  // filter tab bar entirely once history holds no Shorts, so on a page we have
+  // already validated, an absent tab means there is simply nothing to do —
+  // never a reason to fall through to the unfiltered feed.
   const shortsTab = page.locator('button[role="tab"]:has-text("Shorts")').first();
   const tabVisible = await shortsTab
     .waitFor({ state: 'visible', timeout: 10000 })
     .then(() => true)
     .catch(() => false);
-  if (!tabVisible) {
-    throw new Error(
-      'Shorts tab not found on the history page — refusing to run against unfiltered history'
-    );
-  }
+  if (!tabVisible) return 'no-shorts';
 
   await shortsTab.click();
   await page.waitForTimeout(1500);
@@ -76,6 +88,7 @@ async function loadHistoryPage(page) {
   await page.waitForTimeout(1000);
 
   await scrollToLoadAll(page);
+  return 'ready';
 }
 
 async function deleteShorts(page, { dryRun = false } = {}) {
@@ -83,7 +96,11 @@ async function deleteShorts(page, { dryRun = false } = {}) {
   let skippedNonShorts = 0;
 
   while (true) {
-    await loadHistoryPage(page);
+    const status = await loadHistoryPage(page);
+    if (status === 'no-shorts') {
+      log('No Shorts left in history. Done!');
+      break;
+    }
 
     const count = await page.locator(SHORTS_SELECTOR).count();
     if (count === 0) {
@@ -201,4 +218,7 @@ if (require.main === module) {
   });
 }
 
-module.exports = { scrollToLoadAll, SHORTS_SELECTOR, getMenuButton, REMOVE_BUTTON_SELECTOR, isShortsLink };
+module.exports = {
+  scrollToLoadAll, SHORTS_SELECTOR, getMenuButton, REMOVE_BUTTON_SELECTOR,
+  isShortsLink, loadHistoryPage,
+};
