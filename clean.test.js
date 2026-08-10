@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 
-const { scrollToLoadAll, SHORTS_SELECTOR, getMenuButton, REMOVE_BUTTON_SELECTOR } = require('./clean.js');
+const { scrollToLoadAll, SHORTS_SELECTOR, getMenuButton, REMOVE_BUTTON_SELECTOR, isShortsLink } = require('./clean.js');
 
 test('scrollToLoadAll stops scrolling when count stabilizes', async () => {
   const counts = [5, 10, 15, 15];
@@ -34,11 +34,33 @@ test('scrollToLoadAll does not scroll when already empty', async () => {
   assert.strictEqual(scrollCalls, 0);
 });
 
-test('SHORTS_SELECTOR matches ytm-shorts-lockup-view-model-v2, ytd-video-renderer shorts, and yt-lockup-view-model', () => {
+test('SHORTS_SELECTOR covers all three Shorts entry types', () => {
   assert.ok(SHORTS_SELECTOR.includes('ytm-shorts-lockup-view-model-v2'));
   assert.ok(SHORTS_SELECTOR.includes('ytd-video-renderer'));
-  assert.ok(SHORTS_SELECTOR.includes('/shorts/'));
   assert.ok(SHORTS_SELECTOR.includes('yt-lockup-view-model'));
+});
+
+test('every generic SHORTS_SELECTOR clause is anchored to a /shorts/ link', () => {
+  // Regression guard: an unconstrained `yt-lockup-view-model` clause matches
+  // ordinary videos in the history feed and deletes real watch history.
+  const clauses = SHORTS_SELECTOR.split(',').map(c => c.trim());
+  for (const clause of clauses) {
+    const isShortsSpecificTag = clause.startsWith('ytm-shorts-');
+    assert.ok(
+      isShortsSpecificTag || clause.includes('a[href*="/shorts/"]'),
+      `clause "${clause}" matches non-Shorts entries`
+    );
+  }
+});
+
+test('isShortsLink accepts only /shorts/ hrefs', () => {
+  assert.ok(isShortsLink('/shorts/04eDk8brFL4'));
+  assert.ok(isShortsLink('https://www.youtube.com/shorts/2unN8bVOMcE'));
+  // These are ordinary videos that the old selector was deleting.
+  assert.ok(!isShortsLink('/watch?v=R9CElS2DeKQ&t=457s'));
+  assert.ok(!isShortsLink('/watch?v=AxiB8wAf7tI&t=1485s'));
+  assert.ok(!isShortsLink(undefined));
+  assert.ok(!isShortsLink(null));
 });
 
 test('getMenuButton returns More actions button when present', async () => {
