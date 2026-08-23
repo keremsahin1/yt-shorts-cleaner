@@ -1,0 +1,1 @@
+0 3 * * * cd /Users/keremsahin/Github/yt-shorts-cleaner && /opt/homebrew/bin/node clean.js --headless >> /Users/keremsahin/Github/yt-shorts-cleaner/cleaner.log 2>&1

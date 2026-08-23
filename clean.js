@@ -59,11 +59,17 @@ async function loadHistoryPage(page) {
   // Confirm we are on the signed-in history page before doing anything
   // destructive. If the session expired or YouTube served something else, the
   // contents are not ours to delete from.
-  await page.locator('ytd-browse[page-subtype="history"]')
-    .waitFor({ state: 'attached', timeout: 15000 })
-    .catch(() => {});
-  const onHistoryPage = await page.locator('ytd-browse[page-subtype="history"]').count() > 0;
-  const signedIn = await page.locator('#avatar-btn').count() > 0;
+  // Both checks must WAIT, never count instantaneously. The masthead avatar
+  // renders well after the browse element attaches — measured at 6.6s under
+  // launchd. An immediate count() there returns 0 on a perfectly valid session,
+  // and the guard then reports a signed-out page that does not exist. That false
+  // alarm silently disabled this job for 12 days.
+  const onHistoryPage = await page.locator('ytd-browse[page-subtype="history"]')
+    .waitFor({ state: 'attached', timeout: 20000 })
+    .then(() => true).catch(() => false);
+  const signedIn = await page.locator('#avatar-btn')
+    .waitFor({ state: 'attached', timeout: 20000 })
+    .then(() => true).catch(() => false);
   if (!onHistoryPage || !signedIn) {
     throw new Error(
       `Not on a signed-in history page (history=${onHistoryPage}, signedIn=${signedIn}) ` +

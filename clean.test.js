@@ -155,3 +155,45 @@ test('getMenuButton falls back to Action menu button', async () => {
   await btn.click();
   assert.ok(selectedSelector.includes('Action menu'));
 });
+
+/**
+ * Models the real launchd failure: the masthead avatar renders ~6.6s after the
+ * browse element attaches, so an instantaneous count() sees 0 even though the
+ * session is perfectly valid.
+ */
+function mockLatePage({ avatarEverRenders = true } = {}) {
+  let avatarRendered = false;
+  const clicked = [];
+  const has = (sel) => {
+    if (sel.includes('page-subtype="history"')) return true;
+    if (sel.includes('#avatar-btn')) return avatarRendered;
+    if (sel.includes('has-text("Shorts")')) return false;
+    return false;
+  };
+  const handle = (sel) => ({
+    count: async () => (has(sel) ? 1 : 0),
+    waitFor: async () => {
+      if (sel.includes('#avatar-btn')) {
+        if (!avatarEverRenders) throw new Error('timeout');
+        avatarRendered = true;
+        return;
+      }
+      if (!has(sel)) throw new Error(`no ${sel}`);
+    },
+    click: async () => { clicked.push(sel); },
+    first: () => handle(sel),
+  });
+  return { clicked, goto: async () => {}, evaluate: async () => {}, waitForTimeout: async () => {}, locator: handle };
+}
+
+test('loadHistoryPage tolerates an avatar that renders late', async () => {
+  // Reaches the Shorts-tab check and reports no-shorts, rather than throwing.
+  assert.strictEqual(await loadHistoryPage(mockLatePage()), 'no-shorts');
+});
+
+test('loadHistoryPage still refuses when the avatar never renders', async () => {
+  await assert.rejects(
+    () => loadHistoryPage(mockLatePage({ avatarEverRenders: false })),
+    /refusing to touch watch history/
+  );
+});
